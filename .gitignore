@@ -1,0 +1,5 @@
+venv/
+
+.lgd-nfy0
+
+models/*.pt

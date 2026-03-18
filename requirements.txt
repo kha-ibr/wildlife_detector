@@ -1,0 +1,7 @@
+picamera2==0.3.34
+torch== 2.10.0
+opencv-python==4.13.0.92
+gpiozero==2.0.1
+ultralytics==8.4.23
+pandas==3.0.1
+seaborn==0.13.2

@@ -1,80 +1,115 @@
-import os
-import time
 import cv2
-import torch
+import time
+import os
 from datetime import datetime
-from picamera2 import Picamera2
+from ultralytics import YOLO
+from gpiozero import MotionSensor
 
-# --- CONFIG ---
-SAVE_DIR = "./captures"
-RESULTS_DIR = "./results"
-MODEL_PATH = "models/md_v5a.0.0.pt"
-CONF_THRESHOLD = 0.4
-INFERENCE_SIZE = 320
+# --- CONFIGURATION ---
+PIR_PIN = 18
+MODEL_PATH = "yolo26n.pt"
+OUTPUT_FOLDER = "detections"
+LOG_FILE = "detection_log.txt"
+CAPTURE_DURATION = 5
+ANIMAL_CLASSES = [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
 
-# Ensure directories exist
-os.makedirs(SAVE_DIR, exist_ok=True)
-os.makedirs(RESULTS_DIR, exist_ok=True)
+# Initialize Hardware/Model
+pir = MotionSensor(PIR_PIN)
+model = YOLO(MODEL_PATH)
 
-# --- CAMERA INIT ---
-picam2 = Picamera2()
-config = picam2.create_preview_configuration()
-picam2.configure(config)
-picam2.start()
-time.sleep(2)  # camera warmup
+if not os.path.exists(OUTPUT_FOLDER):
+    os.makedirs(OUTPUT_FOLDER)
 
-# --- CAPTURE PHOTO (no AI) ---
-def capture_photo():
-    print("\n=== CAPTURING PHOTO ===")
-    frame = picam2.capture_array()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = os.path.join(SAVE_DIR, f"photo_{timestamp}.jpg")
-    cv2.imwrite(filename, frame)
-    print(f"Photo saved to {filename}\n")
-    return filename
+# Initialize Log File with Header if it doesn't exist
+if not os.path.exists(LOG_FILE):
+    with open(LOG_FILE, "w") as f:
+        f.write("Timestamp,Image,Class,Confidence\n")
 
-# --- LOAD YOLOv5 MODEL ---
-def load_model():
-    print("Loading YOLOv5 model...")
-    model = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH)
-    model.conf = CONF_THRESHOLD
-    return model
+def log_to_file(timestamp, filename, label, confidence):
+    """Appends a detection row to the text file."""
+    with open(LOG_FILE, "a") as f:
+        f.write(f"{timestamp},{filename},{label},{confidence:.2f}\n")
 
-# --- ANALYZE AND SAVE RESULTS ---
-def analyze_and_save(image_path, model):
-    log_path = os.path.join(RESULTS_DIR, "detection_log.txt")
-    with open(log_path, "a") as log_file:
-        log_file.write("Timestamp,Image,Class,Confidence\n")
+def record_and_analyze():
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: Could not open camera.")
+        return
 
-        print("=== ANALYSIS STARTED ===")
-        img = cv2.imread(image_path)
-        results = model(img, size=INFERENCE_SIZE)
+    frame_width = int(cap.get(3))
+    frame_height = int(cap.get(4))
+    
+    frames_list = []
+    best_conf = 0.0
+    detected_class = "Unknown"
+    # Capture the start time for the log entry
+    log_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    print(f"Motion Detected! Recording {CAPTURE_DURATION}s...")
+    
+    start_time = time.time()
+    while (time.time() - start_time) < CAPTURE_DURATION:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-        # Annotated image
-        annotated = results.render()[0]
-        annotated_path = os.path.join(RESULTS_DIR, "annotated_" + os.path.basename(image_path))
-        cv2.imwrite(annotated_path, annotated)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        results = model(frame, stream=True, conf=0.4)
+        
+        for r in results:
+            for box in r.boxes:
+                if int(box.cls[0]) in ANIMAL_CLASSES:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    conf = float(box.conf[0])
+                    
+                    # Track the highest confidence animal found in this clip
+                    detected_class = "animal"
+                    if conf > best_conf:
+                        best_conf = conf
 
-        # Log predictions
-        for *box, conf, cls in results.xyxy[0].tolist():
-            class_name = model.names[int(cls)]
-            confidence = round(conf, 2)
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            log_file.write(f"{timestamp},{os.path.basename(image_path)},{class_name},{confidence}\n")
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(frame, f"Animal {conf:.2f}", (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-        # Display annotated frame
-        display = annotated[:, :, ::-1]
-        cv2.imshow("Detection", display)
-        cv2.waitKey(3000)  # show for 3 seconds
-        cv2.destroyAllWindows()
+        # Burn-in Timestamp
+        cv2.rectangle(frame, (5, frame_height - 35), (280, frame_height - 5), (0, 0, 0), -1)
+        cv2.putText(frame, now, (10, frame_height - 12),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
 
-        print(f"=== ANALYSIS FINISHED ===\nResults saved in {RESULTS_DIR}")
+        frames_list.append(frame)
+        cv2.imshow("Wildlife Cam", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-# --- MAIN ---
-photo_path = capture_photo()
-time.sleep(1)  # optional pause
-model = load_model()
-analyze_and_save(photo_path, model)
+    # Save logic
+    if frames_list:
+        actual_fps = len(frames_list) / (time.time() - start_time)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        video_filename = f"animal_vid_{ts}.avi"
+        full_path = os.path.join(OUTPUT_FOLDER, video_filename)
+         
+        out = cv2.VideoWriter(full_path, cv2.VideoWriter_fourcc(*'XVID'), actual_fps, (frame_width, frame_height))
+        for f in frames_list:
+            out.write(f)
+        out.release()
+        
+        # Log the result of this 10s window
+        log_to_file(log_timestamp, video_filename, detected_class, best_conf)
+        print(f"Video saved: {video_filename} | Logged as: {detected_class}")
 
-# --- CLEANUP ---
-picam2.stop()
+    cap.release()
+    cv2.destroyWindow("Wildlife Cam")
+
+# --- MAIN LOOP ---
+print("PIR Sensor Warming Up...")
+time.sleep(2)
+print("System Ready. Waiting for movement...")
+
+try:
+    while True:
+        pir.wait_for_motion()
+        record_and_analyze()
+        print("Waiting for next movement...")
+        time.sleep(2)
+except KeyboardInterrupt:
+    print("System Shutdown.")

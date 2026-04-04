@@ -3,3 +3,11 @@ venv/
 .lgd-nfy0
 
 models/*.pt
+
+yolo26n.pt
+
+detections/*
+
+detection_log.txt
+
+captures/*

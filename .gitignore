@@ -2,12 +2,16 @@ venv/
 
 .lgd-nfy0
 
-models/*.pt
+models/
 
 yolo26n.pt
 
-detections/*
+detections/
 
 detection_log.txt
 
-captures/*
+__pycache__/
+
+.env
+
+!.gitignore

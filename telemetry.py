@@ -36,10 +36,10 @@ def _async_send(timestamp, filename, label, confidence):
 
 
 def send_telemetry(timestamp, filename, label, confidence):
-    '''thread = threading.Thread(
+    thread = threading.Thread(
         target=_async_send,
         args=(timestamp, filename, label, confidence)
     )
-    thread.start()'''
-    _async_send(timestamp, filename, label, confidence)
+    thread.start()
+    # _async_send(timestamp, filename, label, confidence)
     return True

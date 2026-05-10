@@ -2,19 +2,21 @@
 import cv2
 import time
 import os
-import threading # For non-blocking LED
+import threading
 from datetime import datetime
-from gpiozero import MotionSensor, LED # Added LED
+from gpiozero import MotionSensor, LED
 
 import config
 from detector import Detector
 from camera import capture_window
-from logger import init_storage, log_to_file
+from logger import init_storage, log_to_file, log_performance
 from telemetry import send_telemetry
+
+import psutil
 
 # --- INIT ---
 pir = MotionSensor(config.PIR_PIN)
-red_led = LED(config.LED_PIN) # Initialize LED
+red_led = LED(config.LED_PIN)
 detector = Detector(config.MODEL_PATH)
 
 init_storage(config.OUTPUT_FOLDER, config.LOG_FILE)
@@ -28,6 +30,7 @@ def trigger_led():
     red_led.off()
 
 def handle_event():
+    system_start = time.time()
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("Camera error")
@@ -39,7 +42,26 @@ def handle_event():
         cap, detector, config.CAPTURE_WINDOW
     )
 
+    # Measure total latency
+    total_latency = time.time() - system_start
+
+    # Measure resource usage
+    cpu_usage = psutil.cpu_percent(interval=1)
+    ram_usage = psutil.virtual_memory().percent
+
+    print(f"System Latency: {total_latency:.2f}s")
+    print(f"CPU Usage: {cpu_usage}%")
+    print(f"RAM Usage: {ram_usage}%")
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    log_performance(
+        config.PERFORMANCE_LOG,
+        timestamp,
+        total_latency,
+        cpu_usage,
+        ram_usage
+    )
 
     # --- FILTER: ONLY PROCEED IF IT IS AN ANIMAL ---
     if best_frame is not None and detected_class == "animal":
@@ -61,7 +83,18 @@ def handle_event():
         send_telemetry(timestamp, filename, "animal", best_conf)
 
     elif best_frame is not None:
-        print(f"Detection ignored: {detected_class} is not an animal.")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        missed_folder = "missed_events"
+        os.makedirs(missed_folder, exist_ok=True)
+
+        filename = f"ignored_{ts}.jpg"
+        path = os.path.join(missed_folder, filename)
+
+        # Save locally for evaluation purposes only
+        cv2.imwrite(path, best_frame)
+
+        print(f"Non-animal event ignored. Frame saved for evaluation: {filename}")
     else:
         print("No detection")
 

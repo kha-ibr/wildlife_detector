@@ -3,7 +3,7 @@ from matplotlib.pyplot import box
 from ultralytics import YOLO
 from datetime import datetime
 import cv2
-from config import ANIMAL_CLASSES, PERSON_CLASS
+from config import ANIMAL_CLASSES
 
 
 class Detector:
@@ -27,10 +27,8 @@ class Detector:
 
                     if cls_id in ANIMAL_CLASSES:
                         detected_class = "animal"
-                    elif cls_id == PERSON_CLASS:
-                        detected_class = "person"
                     else:
-                        detected_class = "unknown"
+                        detected_class = "non-animal"
 
                     # Draw label on clean frame
                     clean = frame.copy()

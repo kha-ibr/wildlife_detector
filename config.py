@@ -10,10 +10,10 @@ MODEL_PATH = "models/yolo26n.pt"
 
 OUTPUT_FOLDER = "detections"
 LOG_FILE = "detection_log.txt"
+PERFORMANCE_LOG = "performance_log.txt"
 
 CAPTURE_WINDOW = 10
 
 ANIMAL_CLASSES = [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
-PERSON_CLASS = 0
 
 IOTHUB_DEVICE_CONNECTION_STRING = os.getenv("IOTHUB_DEVICE_CONNECTION_STRING")

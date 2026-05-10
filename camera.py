@@ -6,7 +6,7 @@ import time
 def capture_window(cap, detector, duration):
     best_frame = None
     best_conf = 0.0
-    detected_class = "nothing" # Default
+    detected_class = "non-animal"
 
     start_time = time.time()
 
@@ -22,9 +22,5 @@ def capture_window(cap, detector, duration):
             best_frame = frame_result
             best_conf = new_conf
             detected_class = cls
-
-        # Optional: Remove imshow for headless/service use
-        cv2.imshow("Analyzing...", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'): break
 
     return best_frame, best_conf, detected_class
